@@ -1,0 +1,55 @@
+# Built application files
+*.apk
+*.aab
+*.ap_
+*.aar
+
+# Generated files
+bin/
+gen/
+out/
+release/
+
+# Gradle build caches
+.gradle/
+build/
+app/build/
+
+# Android Studio / IntelliJ
+.idea/
+*.iml
+*.ipr
+*.iws
+.navigation/
+
+# Local env: SDK path differs per machine, and can leak usernames.
+local.properties
+
+# NDK
+.externalNativeBuild/
+.cxx/
+
+# Android Studio / Kotlin
+captures/
+.kotlin/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Log / misc
+*.log
+*.hprof
+lint/intermediates/
+lint/generated/
+lint/outputs/
+lint/tmp/
+
+# Signing (keystores must not be committed)
+*.jks
+*.keystore
+keystore.properties
+
+# Google services
+google-services.json
