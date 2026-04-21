@@ -30,8 +30,9 @@ import com.fieldops.app.ui.common.StatusBadge
 import com.fieldops.app.ui.theme.*
 import com.fieldops.app.ui.utils.rememberStaggeredAnimation
 import com.fieldops.app.ui.utils.scaleOnPress
+import com.fieldops.app.utils.formatDate
+import com.fieldops.app.utils.parseToMillis
 import kotlinx.coroutines.launch
-import java.text.SimpleDateFormat
 import java.util.*
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -544,9 +545,9 @@ enum class SlaTag { NONE, STARTS_SOON, ENDS_SOON, OVERDUE }
 data class ProxFlags(val startsSoon: Boolean, val endsSoon: Boolean, val overdue: Boolean)
 
 fun getProxFlags(t: Task): ProxFlags {
-    val now = Date().time
-    val start = parseDate(t.slaStart)?.time
-    val end = parseDate(t.slaEnd)?.time
+    val now = System.currentTimeMillis()
+    val start = parseToMillis(t.slaStart)
+    val end = parseToMillis(t.slaEnd)
     val dayMs = 24 * 3600 * 1000L
     val startsSoon = start != null && start > now && (start - now) < 2 * dayMs
     val endsSoon = end != null && end > now && (end - now) < 2 * dayMs && (end - now) >= 0
@@ -562,19 +563,4 @@ fun getSlaTag(t: Task): SlaTag {
         f.startsSoon -> SlaTag.STARTS_SOON
         else -> SlaTag.NONE
     }
-}
-
-fun parseDate(iso: String?): Date? {
-    if (iso.isNullOrBlank()) return null
-    return try {
-        val fmt = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.getDefault())
-        fmt.parse(iso.substring(0, minOf(19, iso.length)))
-    } catch (e: Exception) {
-        null
-    }
-}
-
-fun formatDate(iso: String?): String {
-    val d = parseDate(iso) ?: return "—"
-    return SimpleDateFormat("MMM dd, yyyy", Locale.getDefault()).format(d)
 }
