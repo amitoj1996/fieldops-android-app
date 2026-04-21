@@ -583,20 +583,64 @@ fun TaskDetailScreen(navController: NavController, apiService: ApiService, taskI
                     }
                 }
 
-                // Products to collect / deliver. Mirrors the web employee
-                // view (pages/employee.js "Products" section) — resolves
-                // task.items[].productId against the products catalog.
+                // Task details — mirrors the web employee view's "Task details"
+                // block (pages/employee.js ~L745): Type, SLA window, then the
+                // bulleted product list with qty. Same field order, same
+                // fallback ("—") for missing values, same "Name (SKU)" format.
                 item {
                     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
                         Column(modifier = Modifier.padding(16.dp)) {
-                            Text("Products", style = MaterialTheme.typography.titleMedium)
+                            Text("Task details", style = MaterialTheme.typography.titleMedium)
                             Spacer(modifier = Modifier.height(12.dp))
+
+                            // Type row
+                            Row(verticalAlignment = Alignment.Top) {
+                                Text(
+                                    "Type: ",
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                                Text(
+                                    t.type?.takeIf { it.isNotBlank() } ?: "—",
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(6.dp))
+
+                            // SLA row. fmtSLA matches lib/timeFormat.js on the
+                            // web app — "21 Apr 2026, 9:00 AM → 22 Apr 2026, 6:00 PM"
+                            // rendered in IST regardless of device timezone.
+                            Row(verticalAlignment = Alignment.Top) {
+                                Text(
+                                    "SLA: ",
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                                Text(
+                                    "${formatDate(t.slaStart)} → ${formatDate(t.slaEnd)}",
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(10.dp))
+
+                            // Products — bulleted list matching the web's <ul>.
+                            Text(
+                                "Products:",
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                style = MaterialTheme.typography.bodyMedium
+                            )
                             val items = t.items.orEmpty()
                             if (items.isEmpty()) {
                                 Text(
-                                    "No products listed for this task.",
+                                    "—",
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    modifier = Modifier.padding(start = 12.dp, top = 4.dp)
                                 )
                             } else {
                                 items.forEach { row ->
@@ -607,21 +651,19 @@ fun TaskDetailScreen(navController: NavController, apiService: ApiService, taskI
                                     Row(
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .padding(vertical = 6.dp),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
+                                            .padding(start = 12.dp, top = 4.dp),
+                                        verticalAlignment = Alignment.Top
                                     ) {
                                         Text(
-                                            text = name,
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            color = MaterialTheme.colorScheme.onSurface,
-                                            modifier = Modifier.weight(1f)
+                                            "•  ",
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            style = MaterialTheme.typography.bodyMedium
                                         )
                                         Text(
-                                            text = "× $qty",
+                                            text = "$name × $qty",
+                                            color = MaterialTheme.colorScheme.onSurface,
                                             style = MaterialTheme.typography.bodyMedium,
-                                            fontWeight = FontWeight.SemiBold,
-                                            color = MaterialTheme.colorScheme.onSurface
+                                            modifier = Modifier.weight(1f)
                                         )
                                     }
                                 }

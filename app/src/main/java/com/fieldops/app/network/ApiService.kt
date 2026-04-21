@@ -129,6 +129,7 @@ data class ClientPrincipal(
 data class Task(
     val id: String,
     val title: String?,
+    val type: String?,
     val status: String?,
     val slaStart: String?,
     val slaEnd: String?,
