@@ -10,11 +10,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontStyle
 import com.fieldops.app.network.Expense
 import com.fieldops.app.network.Statuses
 import com.fieldops.app.ui.common.AppCard
 import com.fieldops.app.ui.common.StatusBadge
 import com.fieldops.app.ui.theme.*
+import com.fieldops.app.utils.formatDate
 
 @Composable
 fun ExpenseItem(
@@ -63,6 +69,19 @@ fun ExpenseItem(
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface
                     )
+                    // Row 1: submitted date + merchant (matches the web view)
+                    val metaParts = listOfNotNull(
+                        expense.createdAt?.let { formatDate(it) },
+                        expense.merchant?.takeIf { it.isNotBlank() }
+                    )
+                    if (metaParts.isNotEmpty()) {
+                        Text(
+                            text = metaParts.joinToString(" — "),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 12.sp
+                        )
+                    }
                     if (taskTitle != null) {
                         Text(
                             text = "Task: $taskTitle",
@@ -91,8 +110,44 @@ fun ExpenseItem(
             )
         }
         
+        // Admin's rejection note (only when REJECTED and a note is present).
+        // Matches the web employee view's red callout so the employee sees
+        // why the expense was rejected before they resubmit.
+        val note = expense.approval?.note
+        if (expense.approval?.status == Statuses.REJECTED && !note.isNullOrBlank()) {
+            Spacer(modifier = Modifier.height(12.dp))
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(
+                        ErrorColor.copy(alpha = 0.08f),
+                        shape = RoundedCornerShape(8.dp)
+                    )
+                    .border(
+                        width = 1.dp,
+                        color = ErrorColor.copy(alpha = 0.3f),
+                        shape = RoundedCornerShape(8.dp)
+                    )
+                    .padding(12.dp)
+            ) {
+                Text(
+                    "Admin note",
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = ErrorColor,
+                    fontSize = 11.sp
+                )
+                Text(
+                    note,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontStyle = FontStyle.Italic
+                )
+            }
+        }
+
         Spacer(modifier = Modifier.height(16.dp))
-        
+
         // Footer Row - Status and Actions
         Row(
             modifier = Modifier.fillMaxWidth(),

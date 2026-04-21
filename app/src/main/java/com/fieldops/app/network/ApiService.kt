@@ -160,7 +160,14 @@ data class TaskItem(
     val quantity: Int?
 )
 
-data class CheckInRequest(val tenantId: String, val taskId: String)
+data class CheckInRequest(
+    val tenantId: String,
+    val taskId: String,
+    // Populated when the employee checks in before SLA start; the backend
+    // makes this required with a 400 and the web app collects it via a modal
+    // before firing the request. Mirrored here.
+    val reason: String? = null
+)
 data class CheckOutRequest(val tenantId: String, val taskId: String, val reason: String? = null)
 
 data class TaskEvent(
@@ -195,7 +202,15 @@ data class Expense(
     val merchant: String? = null
 )
 
-data class ApprovalStatus(val status: String?)
+data class ApprovalStatus(
+    val status: String?,
+    // Admin's note when rejecting (or approving with commentary). Rendered in
+    // the expense cards so employees see why a rejected expense was rejected.
+    val note: String? = null,
+    val reason: String? = null,
+    val decidedAt: String? = null,
+    val decidedBy: String? = null
+)
 
 data class FinalizeExpenseRequest(
     val tenantId: String,
@@ -203,7 +218,14 @@ data class FinalizeExpenseRequest(
     val blobPath: String? = null,
     val category: String,
     val total: Double,
-    val expenseId: String? = null
+    val expenseId: String? = null,
+    // Hotel-specific fields. The backend's per-day budget helper needs
+    // hotelCheckIn/hotelCheckOut (YYYY-MM-DD) for multi-night allocation;
+    // without these the server treats the whole amount as single-day spend
+    // and sends multi-night stays to PENDING_REVIEW unnecessarily.
+    val hotelCheckIn: String? = null,
+    val hotelCheckOut: String? = null,
+    val nights: Int? = null
 )
 
 data class FinalizeExpenseResponse(val approval: ApprovalStatus?)

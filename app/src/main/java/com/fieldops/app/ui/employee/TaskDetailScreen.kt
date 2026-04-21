@@ -7,6 +7,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -54,7 +56,16 @@ fun TaskDetailScreen(navController: NavController, apiService: ApiService, taskI
     var cameraImageUri by remember { mutableStateOf<Uri?>(null) }
     var showCheckOutReasonDialog by remember { mutableStateOf(false) }
     var checkOutReason by remember { mutableStateOf("") }
-    
+    // Early check-in reason — pops BEFORE the API call when slaStart is in
+    // the future (with a 5-min buffer, matching backend's _parse_iso logic).
+    // Web does the same (pages/employee.js showEarlyModal).
+    var showEarlyCheckInDialog by remember { mutableStateOf(false) }
+    var earlyCheckInReason by remember { mutableStateOf("") }
+    // Which IST day the Budget Usage card is showing. Employees flip
+    // through the SLA window so they can check any given day's remaining
+    // budget before submitting. Defaults to today (IST).
+    var selectedBudgetDate by remember { mutableStateOf(com.fieldops.app.utils.DateUtils.getTodayIST()) }
+
     val scope = rememberCoroutineScope()
     val context = androidx.compose.ui.platform.LocalContext.current
 
@@ -134,7 +145,10 @@ fun TaskDetailScreen(navController: NavController, apiService: ApiService, taskI
                                     draftExpense = DraftExpense(
                                         blobUrl = sas.blobUrl,
                                         total = ocr?.ocr?.total,
-                                        category = "Other"
+                                        category = "Other",
+                                        merchant = ocr?.ocr?.merchant,
+                                        txnDate = ocr?.ocr?.date,
+                                        currency = ocr?.ocr?.currency
                                     )
                                     showAddExpenseDialog = true
                                 }
@@ -205,7 +219,10 @@ fun TaskDetailScreen(navController: NavController, apiService: ApiService, taskI
                                     draftExpense = DraftExpense(
                                         blobUrl = sas.blobUrl,
                                         total = ocr?.ocr?.total,
-                                        category = "Other"
+                                        category = "Other",
+                                        merchant = ocr?.ocr?.merchant,
+                                        txnDate = ocr?.ocr?.date,
+                                        currency = ocr?.ocr?.currency
                                     )
                                     showAddExpenseDialog = true
                                 }
@@ -348,7 +365,7 @@ fun TaskDetailScreen(navController: NavController, apiService: ApiService, taskI
                     }
                 },
                 onGallery = { receiptLauncher.launch("image/*") },
-                onSubmit = { category, total ->
+                onSubmit = { category, total, hotelCheckIn, hotelCheckOut, nights ->
                     scope.launch {
                         isUploadingReceipt = true
                         try {
@@ -358,11 +375,36 @@ fun TaskDetailScreen(navController: NavController, apiService: ApiService, taskI
                                 blobPath = draftExpense?.blobUrl,
                                 category = category,
                                 total = total,
-                                expenseId = draftExpense?.expenseId
+                                expenseId = draftExpense?.expenseId,
+                                hotelCheckIn = hotelCheckIn,
+                                hotelCheckOut = hotelCheckOut,
+                                nights = nights
                             )
-                            apiService.finalizeExpense(req)
-                            showAddExpenseDialog = false
-                            refresh()
+                            val res = apiService.finalizeExpense(req)
+                            if (res.isSuccessful) {
+                                // Server decision is the source of truth for
+                                // auto-approve vs pending review — surface it
+                                // in a toast so the employee knows whether an
+                                // admin still has to look.
+                                val approvalStatus = res.body()?.approval?.status?.uppercase()
+                                val msg = when (approvalStatus) {
+                                    "AUTO_APPROVED", "APPROVED" -> "Expense auto-approved"
+                                    "PENDING_REVIEW", "PENDING" -> "Sent for admin review"
+                                    "REJECTED" -> "Submission rejected by server"
+                                    else -> "Expense submitted"
+                                }
+                                android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
+                                showAddExpenseDialog = false
+                                refresh()
+                            } else {
+                                val errBody = res.errorBody()?.string().orEmpty()
+                                android.util.Log.e("TaskDetail", "Finalize HTTP ${res.code()}: $errBody")
+                                android.widget.Toast.makeText(
+                                    context,
+                                    "Submit failed (HTTP ${res.code()}): $errBody",
+                                    android.widget.Toast.LENGTH_LONG
+                                ).show()
+                            }
                         } catch (e: Exception) {
                             android.util.Log.e("TaskDetail", "Error finalizing expense", e)
                             android.widget.Toast.makeText(context, "Failed to submit expense: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
@@ -372,7 +414,9 @@ fun TaskDetailScreen(navController: NavController, apiService: ApiService, taskI
                     }
                 },
                 draft = draftExpense,
-                uploading = isUploadingReceipt
+                uploading = isUploadingReceipt,
+                task = task,
+                expenses = expenses
             )
         }
         if (loading && task == null) {
@@ -405,33 +449,27 @@ fun TaskDetailScreen(navController: NavController, apiService: ApiService, taskI
                             // the embedded SAS in reportUrl. Either counts.
                             val hasReport = t.hasReport
 
+                            // Pre-flight SLA checks (5-minute buffer, same as
+                            // the backend's _parse_iso buffer). If the action
+                            // would be "early" or "late" we collect a reason
+                            // from the user via a modal BEFORE firing the API,
+                            // so they aren't surprised by a server 400.
+                            val slaStartMs = com.fieldops.app.utils.parseToMillis(t.slaStart)
+                            val slaEndMs = com.fieldops.app.utils.parseToMillis(t.slaEnd)
+                            val bufferMs = 5 * 60 * 1000L
+
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Button(
                                     onClick = {
-                                        scope.launch {
-                                            try {
-                                                val res = apiService.checkIn(CheckInRequest("default", t.id))
-                                                if (res.isSuccessful) {
-                                                    refresh()
-                                                } else {
-                                                    // Surface server-side reasons (Forbidden,
-                                                    // task-not-found, validation errors) to the
-                                                    // user instead of silently pretending it
-                                                    // worked and re-rendering the same state.
-                                                    val errBody = res.errorBody()?.string().orEmpty()
-                                                    android.util.Log.e(
-                                                        "TaskDetail",
-                                                        "Check-in HTTP ${res.code()}: $errBody"
-                                                    )
-                                                    android.widget.Toast.makeText(
-                                                        context,
-                                                        "Check-in failed (HTTP ${res.code()}): $errBody",
-                                                        android.widget.Toast.LENGTH_LONG
-                                                    ).show()
-                                                }
-                                            } catch (e: Exception) {
-                                                android.util.Log.e("TaskDetail", "Check-in failed", e)
-                                                android.widget.Toast.makeText(context, "Check-in failed: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
+                                        val now = System.currentTimeMillis()
+                                        if (slaStartMs != null && now < slaStartMs - bufferMs) {
+                                            earlyCheckInReason = ""
+                                            showEarlyCheckInDialog = true
+                                        } else {
+                                            scope.launch {
+                                                performCheckIn(
+                                                    apiService, t.id, null, context, ::refresh
+                                                )
                                             }
                                         }
                                     },
@@ -442,31 +480,15 @@ fun TaskDetailScreen(navController: NavController, apiService: ApiService, taskI
                                 }
                                 Button(
                                     onClick = {
-                                        scope.launch {
-                                            try {
-                                                val res = apiService.checkOut(CheckOutRequest("default", t.id))
-                                                if (res.isSuccessful) {
-                                                    refresh()
-                                                } else if (res.code() == 400) {
-                                                    // Backend signals "reason required" on
-                                                    // SLA-breached check-out via a 400. Pop
-                                                    // the reason dialog.
-                                                    showCheckOutReasonDialog = true
-                                                } else {
-                                                    val errBody = res.errorBody()?.string().orEmpty()
-                                                    android.util.Log.e(
-                                                        "TaskDetail",
-                                                        "Check-out HTTP ${res.code()}: $errBody"
-                                                    )
-                                                    android.widget.Toast.makeText(
-                                                        context,
-                                                        "Check-out failed (HTTP ${res.code()}): $errBody",
-                                                        android.widget.Toast.LENGTH_LONG
-                                                    ).show()
-                                                }
-                                            } catch (e: Exception) {
-                                                android.util.Log.e("TaskDetail", "Check-out failed", e)
-                                                android.widget.Toast.makeText(context, "Check-out failed: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
+                                        val now = System.currentTimeMillis()
+                                        if (slaEndMs != null && now > slaEndMs) {
+                                            checkOutReason = ""
+                                            showCheckOutReasonDialog = true
+                                        } else {
+                                            scope.launch {
+                                                performCheckOut(
+                                                    apiService, t.id, null, context, ::refresh
+                                                )
                                             }
                                         }
                                     },
@@ -674,13 +696,75 @@ fun TaskDetailScreen(navController: NavController, apiService: ApiService, taskI
 
                 // Budget Usage — uses the shared per-day budget helper so the
                 // numbers here agree with the server's auto-approve decisions.
+                // Employees flip the selected day through the SLA window with
+                // prev/next so they can check any upcoming day's remaining
+                // budget before submitting a hotel or travel expense.
                 item {
                     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
                         Column(modifier = Modifier.padding(16.dp)) {
-                            Text("Budget Usage (today, IST)", style = MaterialTheme.typography.titleMedium)
-                            Spacer(modifier = Modifier.height(12.dp))
-                            val today = com.fieldops.app.utils.DateUtils.getTodayIST()
-                            val remaining = com.fieldops.app.utils.Budget.remainingByCategory(t, expenses, today)
+                            Text("Budget Usage (IST)", style = MaterialTheme.typography.titleMedium)
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            // SLA window bounds in IST; clamp the stepper so
+                            // users can't pick days outside the window.
+                            val istOffset = java.time.ZoneOffset.ofHoursMinutes(5, 30)
+                            val slaStartLocal = com.fieldops.app.utils.parseToMillis(t.slaStart)
+                                ?.let { java.time.Instant.ofEpochMilli(it).atOffset(istOffset).toLocalDate() }
+                            val slaEndLocal = com.fieldops.app.utils.parseToMillis(t.slaEnd)
+                                ?.let { java.time.Instant.ofEpochMilli(it).atOffset(istOffset).toLocalDate() }
+                            val current = try {
+                                java.time.LocalDate.parse(selectedBudgetDate)
+                            } catch (_: Exception) {
+                                java.time.LocalDate.now(istOffset)
+                            }
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                IconButton(
+                                    onClick = {
+                                        val prev = current.minusDays(1)
+                                        if (slaStartLocal == null || !prev.isBefore(slaStartLocal)) {
+                                            selectedBudgetDate = prev.toString()
+                                        }
+                                    },
+                                    enabled = slaStartLocal == null || current.isAfter(slaStartLocal)
+                                ) {
+                                    Icon(Icons.Default.ChevronLeft, contentDescription = "Previous day")
+                                }
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text(
+                                        current.format(java.time.format.DateTimeFormatter.ofPattern("d MMM yyyy", java.util.Locale.ENGLISH)),
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    val todayIst = com.fieldops.app.utils.DateUtils.getTodayIST()
+                                    if (selectedBudgetDate != todayIst) {
+                                        TextButton(onClick = { selectedBudgetDate = todayIst }) {
+                                            Text("Today", fontSize = 12.sp)
+                                        }
+                                    } else {
+                                        Text("Today", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                }
+                                IconButton(
+                                    onClick = {
+                                        val next = current.plusDays(1)
+                                        if (slaEndLocal == null || !next.isAfter(slaEndLocal)) {
+                                            selectedBudgetDate = next.toString()
+                                        }
+                                    },
+                                    enabled = slaEndLocal == null || current.isBefore(slaEndLocal)
+                                ) {
+                                    Icon(Icons.Default.ChevronRight, contentDescription = "Next day")
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(8.dp))
+                            val remaining = com.fieldops.app.utils.Budget.remainingByCategory(t, expenses, selectedBudgetDate)
                             for (cat in listOf("Hotel", "Food", "Travel", "Other")) {
                                 val limit = com.fieldops.app.utils.Budget.dailyLimitFor(t, cat)
                                 val rem = remaining[cat] ?: limit
@@ -690,17 +774,17 @@ fun TaskDetailScreen(navController: NavController, apiService: ApiService, taskI
                                 Column(modifier = Modifier.padding(vertical = 4.dp)) {
                                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                         Text(cat, style = MaterialTheme.typography.bodyMedium)
-                                        Text("${(pct * 100).toInt()}%", style = MaterialTheme.typography.bodyMedium, color = Color.Gray)
+                                        Text("${(pct * 100).toInt()}%", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                     }
                                     LinearProgressIndicator(
                                         progress = pct.coerceIn(0f, 1f),
                                         modifier = Modifier.fillMaxWidth().height(8.dp),
-                                        color = if (pct > 1f) Color.Red else if (pct > 0.75f) Color(0xFFF59E0B) else Color(0xFF3B82F6),
+                                        color = if (pct > 1f) ErrorColor else if (pct > 0.75f) WarningColor else PrimaryColor,
                                     )
                                     Text(
-                                        "Used today: ${used.toInt()} / Daily limit: ${limit.toInt()} (remaining ${rem.toInt()})",
+                                        "Used: ${used.toInt()} / Daily limit: ${limit.toInt()} (remaining ${rem.toInt()})",
                                         style = MaterialTheme.typography.bodySmall,
-                                        color = Color.Gray
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 }
                             }
@@ -814,42 +898,60 @@ fun TaskDetailScreen(navController: NavController, apiService: ApiService, taskI
                 }
             },
             confirmButton = {
-                Button(onClick = {
-                    scope.launch {
-                        try {
-                            val res = apiService.checkOut(
-                                CheckOutRequest("default", taskId, checkOutReason)
-                            )
-                            if (res.isSuccessful) {
-                                showCheckOutReasonDialog = false
-                                refresh()
-                            } else {
-                                val errBody = res.errorBody()?.string().orEmpty()
-                                android.util.Log.e(
-                                    "TaskDetail",
-                                    "Check-out with reason HTTP ${res.code()}: $errBody"
-                                )
-                                android.widget.Toast.makeText(
-                                    context,
-                                    "Check-out failed (HTTP ${res.code()}): $errBody",
-                                    android.widget.Toast.LENGTH_LONG
-                                ).show()
-                            }
-                        } catch (e: Exception) {
-                            android.util.Log.e("TaskDetail", "Check-out with reason failed", e)
-                            android.widget.Toast.makeText(
-                                context,
-                                "Check-out failed: ${e.message}",
-                                android.widget.Toast.LENGTH_LONG
-                            ).show()
+                Button(
+                    onClick = {
+                        val reason = checkOutReason
+                        showCheckOutReasonDialog = false
+                        scope.launch {
+                            performCheckOut(apiService, taskId, reason, context, ::refresh)
                         }
-                    }
-                }) {
+                    },
+                    enabled = checkOutReason.trim().isNotEmpty()
+                ) {
                     Text("Submit")
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showCheckOutReasonDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    // Early check-in dialog (pre-flight): pops when the employee taps Check
+    // In before SLA start. Mirrors the late-checkout dialog's structure.
+    if (showEarlyCheckInDialog) {
+        AlertDialog(
+            onDismissRequest = { showEarlyCheckInDialog = false },
+            title = { Text("Check in early") },
+            text = {
+                Column {
+                    Text("You are checking in before the SLA start time. Please add a brief reason so we can record it.")
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = earlyCheckInReason,
+                        onValueChange = { earlyCheckInReason = it },
+                        label = { Text("Reason") }
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val reason = earlyCheckInReason
+                        showEarlyCheckInDialog = false
+                        scope.launch {
+                            performCheckIn(apiService, taskId, reason, context, ::refresh)
+                        }
+                    },
+                    enabled = earlyCheckInReason.trim().isNotEmpty()
+                ) {
+                    Text("Submit & check in")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showEarlyCheckInDialog = false }) {
                     Text("Cancel")
                 }
             }
@@ -862,20 +964,59 @@ fun AddExpenseDialog(
     onDismiss: () -> Unit,
     onCamera: () -> Unit,
     onGallery: () -> Unit,
-    onSubmit: (String, Double) -> Unit,
+    onSubmit: (String, Double, String?, String?, Int?) -> Unit,
     draft: DraftExpense?,
     uploading: Boolean,
+    task: Task?,
+    expenses: List<Expense>,
     categories: List<String> = listOf("Hotel", "Food", "Travel", "Other")
 ) {
     var category by remember(draft) { mutableStateOf(draft?.category ?: "") }
     var total by remember(draft) { mutableStateOf(draft?.total?.toString() ?: "") }
+    var hotelCheckIn by remember(draft) { mutableStateOf(draft?.hotelCheckIn ?: "") }
+    var hotelCheckOut by remember(draft) { mutableStateOf(draft?.hotelCheckOut ?: "") }
     var expanded by remember { mutableStateOf(false) }
+
+    // Derive nights from the two YYYY-MM-DD inputs. Matches the server's
+    // budget helper (Budget.applicableDates) which treats checkout as the
+    // first non-consumed night.
+    val nightsComputed: Int? = remember(hotelCheckIn, hotelCheckOut) {
+        try {
+            if (hotelCheckIn.length >= 10 && hotelCheckOut.length >= 10) {
+                val ci = java.time.LocalDate.parse(hotelCheckIn.substring(0, 10))
+                val co = java.time.LocalDate.parse(hotelCheckOut.substring(0, 10))
+                val d = java.time.temporal.ChronoUnit.DAYS.between(ci, co).toInt()
+                if (d > 0) d else null
+            } else null
+        } catch (_: Exception) { null }
+    }
+
+    // Remaining budget for today (IST). The server's auto-approve decision
+    // runs against per-day allocations, so showing "today" keeps the UI and
+    // server agreeing for single-day categories. For hotel multi-night
+    // spreads the actual call is per-date but previewing today is enough to
+    // forewarn about obvious overspend.
+    val today = com.fieldops.app.utils.DateUtils.getTodayIST()
+    val remaining = remember(task, expenses) {
+        com.fieldops.app.utils.Budget.remainingByCategory(task, expenses, today)
+    }
+    val dailyLimit = remember(task, category) {
+        if (category.isNotEmpty()) com.fieldops.app.utils.Budget.dailyLimitFor(task, category) else 0.0
+    }
+    val remainingForCat = if (category.isNotEmpty()) remaining[category] ?: dailyLimit else null
+
+    val parsedTotal = total.toDoubleOrNull()
+    val ocrTotal = draft?.total
+    val totalEdited = parsedTotal != null && ocrTotal != null && kotlin.math.abs(parsedTotal - ocrTotal) > 0.009
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (draft?.expenseId != null) "Edit Expense" else "Add Expense") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.verticalScroll(rememberScrollState())
+            ) {
                 if (draft?.blobUrl == null) {
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Button(
@@ -899,11 +1040,58 @@ fun AddExpenseDialog(
                     }
                     if (uploading) {
                         LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                        Text("Uploading & Scanning...", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+                        Text("Uploading & Scanning...", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 } else {
                     Text("Receipt Uploaded", color = SuccessColor, fontWeight = FontWeight.Bold)
-                    
+
+                    // OCR summary block. Same fields the web employee view
+                    // renders above the amount field so the user can sanity
+                    // check what the scanner picked up before they commit.
+                    val hasOcr = !draft.merchant.isNullOrBlank() ||
+                        !draft.txnDate.isNullOrBlank() ||
+                        !draft.currency.isNullOrBlank()
+                    if (hasOcr) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(
+                                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                                    shape = RoundedCornerShape(8.dp)
+                                )
+                                .padding(12.dp)
+                        ) {
+                            Text(
+                                "Extracted from receipt",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            if (!draft.merchant.isNullOrBlank()) {
+                                Text(
+                                    "Merchant: ${draft.merchant}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                            if (!draft.txnDate.isNullOrBlank()) {
+                                Text(
+                                    "Date: ${draft.txnDate}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                            if (!draft.currency.isNullOrBlank()) {
+                                Text(
+                                    "Currency: ${draft.currency}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                        }
+                    }
+
                     Box {
                         OutlinedButton(onClick = { expanded = true }, modifier = Modifier.fillMaxWidth()) {
                             Text(if (category.isEmpty()) "Select Category" else category)
@@ -928,19 +1116,103 @@ fun AddExpenseDialog(
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true
                     )
+
+                    // Warn when the employee's typed total differs from what
+                    // OCR picked up — they might have mis-keyed a digit, or
+                    // they are deliberately overriding (in which case the
+                    // admin sees both values and a note). Either way, make
+                    // it visible.
+                    if (totalEdited) {
+                        Text(
+                            "Amount differs from scanned receipt (₹${ocrTotal}). Admin will see this as an override.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = WarningColor
+                        )
+                    }
+
+                    // Hotel-only fields. The backend's per-day budget helper
+                    // needs hotelCheckIn/hotelCheckOut (YYYY-MM-DD) so a
+                    // multi-night stay is spread across nights instead of
+                    // crashing into a single-day limit.
+                    if (category.equals("Hotel", ignoreCase = true)) {
+                        Text(
+                            "Hotel stay",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        OutlinedTextField(
+                            value = hotelCheckIn,
+                            onValueChange = { hotelCheckIn = it },
+                            label = { Text("Check-in (YYYY-MM-DD)") },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true
+                        )
+                        OutlinedTextField(
+                            value = hotelCheckOut,
+                            onValueChange = { hotelCheckOut = it },
+                            label = { Text("Check-out (YYYY-MM-DD)") },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true
+                        )
+                        if (nightsComputed != null) {
+                            Text(
+                                "Nights: $nightsComputed",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        } else if (hotelCheckIn.isNotEmpty() || hotelCheckOut.isNotEmpty()) {
+                            Text(
+                                "Enter valid dates with check-out after check-in.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = WarningColor
+                            )
+                        }
+                    }
+
+                    // Remaining budget preview. Shown only after a category
+                    // is picked so the number is meaningful.
+                    if (remainingForCat != null) {
+                        val overLimit = parsedTotal != null && parsedTotal > remainingForCat + 0.01
+                        Text(
+                            "Remaining today ($category, IST): ₹${remainingForCat.toInt()} of ₹${dailyLimit.toInt()}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (overLimit) ErrorColor else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        if (overLimit) {
+                            Text(
+                                "This exceeds today's remaining budget — will need admin review.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = ErrorColor
+                            )
+                        }
+                    }
                 }
             }
         },
         confirmButton = {
             if (draft?.blobUrl != null) {
+                val amount = total.toDoubleOrNull()
+                val isHotel = category.equals("Hotel", ignoreCase = true)
+                // Hotel submissions without a valid night count would force
+                // the server's helper to treat the whole amount as one-day
+                // spend and send to PENDING_REVIEW unnecessarily — block it
+                // here so the employee fixes the dates first.
+                val hotelValid = !isHotel || nightsComputed != null
+                val ready = category.isNotEmpty() && amount != null && amount > 0 && hotelValid
                 Button(
-                    onClick = { 
-                        val amount = total.toDoubleOrNull()
-                        if (category.isNotEmpty() && amount != null && amount > 0) {
-                            onSubmit(category, amount)
+                    onClick = {
+                        if (ready && amount != null) {
+                            onSubmit(
+                                category,
+                                amount,
+                                if (isHotel) hotelCheckIn.takeIf { it.isNotBlank() } else null,
+                                if (isHotel) hotelCheckOut.takeIf { it.isNotBlank() } else null,
+                                if (isHotel) nightsComputed else null
+                            )
                         }
                     },
-                    enabled = !uploading
+                    enabled = !uploading && ready
                 ) {
                     Text("Submit")
                 }
@@ -952,9 +1224,82 @@ fun AddExpenseDialog(
     )
 }
 
+/** Fire /api/tasks/checkin, handle response, refresh on success, toast on
+ *  failure. Shared between the normal check-in button and the
+ *  early-check-in-reason dialog submit button. */
+private suspend fun performCheckIn(
+    apiService: ApiService,
+    taskId: String,
+    reason: String?,
+    context: android.content.Context,
+    refresh: () -> Unit
+) {
+    try {
+        val res = apiService.checkIn(CheckInRequest("default", taskId, reason))
+        if (res.isSuccessful) {
+            refresh()
+        } else {
+            val errBody = res.errorBody()?.string().orEmpty()
+            android.util.Log.e("TaskDetail", "Check-in HTTP ${res.code()}: $errBody")
+            android.widget.Toast.makeText(
+                context,
+                "Check-in failed (HTTP ${res.code()}): $errBody",
+                android.widget.Toast.LENGTH_LONG
+            ).show()
+        }
+    } catch (e: Exception) {
+        android.util.Log.e("TaskDetail", "Check-in failed", e)
+        android.widget.Toast.makeText(
+            context,
+            "Check-in failed: ${e.message}",
+            android.widget.Toast.LENGTH_LONG
+        ).show()
+    }
+}
+
+/** Same contract as performCheckIn but for /api/tasks/checkout. */
+private suspend fun performCheckOut(
+    apiService: ApiService,
+    taskId: String,
+    reason: String?,
+    context: android.content.Context,
+    refresh: () -> Unit
+) {
+    try {
+        val res = apiService.checkOut(CheckOutRequest("default", taskId, reason))
+        if (res.isSuccessful) {
+            refresh()
+        } else {
+            val errBody = res.errorBody()?.string().orEmpty()
+            android.util.Log.e("TaskDetail", "Check-out HTTP ${res.code()}: $errBody")
+            android.widget.Toast.makeText(
+                context,
+                "Check-out failed (HTTP ${res.code()}): $errBody",
+                android.widget.Toast.LENGTH_LONG
+            ).show()
+        }
+    } catch (e: Exception) {
+        android.util.Log.e("TaskDetail", "Check-out failed", e)
+        android.widget.Toast.makeText(
+            context,
+            "Check-out failed: ${e.message}",
+            android.widget.Toast.LENGTH_LONG
+        ).show()
+    }
+}
+
 data class DraftExpense(
     val blobUrl: String? = null,
     val total: Double? = null,
     val category: String? = null,
-    val expenseId: String? = null
+    val expenseId: String? = null,
+    // OCR extraction surfaced to the user in the Add Expense dialog so they
+    // can see what the scanner picked up before accepting the suggested total.
+    val merchant: String? = null,
+    val txnDate: String? = null,
+    val currency: String? = null,
+    // Hotel-only fields when the employee is submitting a multi-night stay.
+    val hotelCheckIn: String? = null,
+    val hotelCheckOut: String? = null,
+    val nights: Int? = null
 )

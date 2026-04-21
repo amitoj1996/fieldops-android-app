@@ -1,8 +1,10 @@
 package com.fieldops.app.ui.employee
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -147,8 +149,43 @@ fun ModernExpenseCard(
             )
         }
         
+        // Admin's rejection note — matches the web's red callout so the
+        // employee sees why the expense was rejected before resubmitting.
+        val note = expense.approval?.note
+        if (expense.approval?.status == Statuses.REJECTED && !note.isNullOrBlank()) {
+            Spacer(modifier = Modifier.height(12.dp))
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(
+                        ErrorColor.copy(alpha = 0.08f),
+                        shape = RoundedCornerShape(8.dp)
+                    )
+                    .border(
+                        width = 1.dp,
+                        color = ErrorColor.copy(alpha = 0.3f),
+                        shape = RoundedCornerShape(8.dp)
+                    )
+                    .padding(12.dp)
+            ) {
+                Text(
+                    "Admin note",
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = ErrorColor,
+                    fontSize = 11.sp
+                )
+                Text(
+                    note,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontStyle = FontStyle.Italic
+                )
+            }
+        }
+
         Spacer(modifier = Modifier.height(16.dp))
-        
+
         // Divider
         Box(
             modifier = Modifier

@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import com.fieldops.app.network.ApiService
+import com.fieldops.app.network.Product
 import com.fieldops.app.network.Task
 import com.fieldops.app.network.drainPaged
 import com.fieldops.app.ui.common.StatusBadge
@@ -39,6 +40,9 @@ import java.util.*
 @Composable
 fun EmployeeDashboard(navController: NavController, apiService: ApiService) {
     var tasks by remember { mutableStateOf<List<Task>>(emptyList()) }
+    // Indexed lookup: productId -> lowercased "name (sku)" for fast search
+    // matching. Web dashboard does the same (pages/employee.js ~L206).
+    var productIndex by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
     var loading by remember { mutableStateOf(true) }
     var query by remember { mutableStateOf("") }
     var statusFilter by remember { mutableStateOf("ALL") }
@@ -67,6 +71,19 @@ fun EmployeeDashboard(navController: NavController, apiService: ApiService) {
                 } else {
                     allTasks
                 }
+
+                // Product catalog — used by the search box so employees can
+                // find tasks by product name / SKU, not just task title.
+                val pRes = apiService.getProducts()
+                if (pRes.isSuccessful) {
+                    productIndex = pRes.body().orEmpty().associate { p ->
+                        val label = buildString {
+                            append(p.name.orEmpty())
+                            if (!p.sku.isNullOrBlank()) append(" (").append(p.sku).append(")")
+                        }
+                        p.id to label.lowercase()
+                    }
+                }
             } catch (e: Exception) {
                 // Handle error
             } finally {
@@ -77,9 +94,17 @@ fun EmployeeDashboard(navController: NavController, apiService: ApiService) {
 
     val filteredTasks = tasks.filter { task ->
         val q = query.trim().lowercase()
-        val titleMatch = (task.title ?: "").lowercase().contains(q)
+        val titleMatch = q.isEmpty() || (task.title ?: "").lowercase().contains(q)
+        // Also search across the task's product list, matching the web view.
+        // Falls back to the raw productId if a product has since been deleted
+        // from the catalog (so you can still find the task by its item id).
+        val productMatch = q.isNotEmpty() && (task.items ?: emptyList()).any { item ->
+            val id = item.productId ?: item.product ?: ""
+            val name = productIndex[id] ?: id.lowercase()
+            name.contains(q)
+        }
         val statusMatch = statusFilter == "ALL" || (task.status ?: "").equals(statusFilter, ignoreCase = true)
-        
+
         val proxMatch = if (proxFilter == "ALL") true else {
             val flags = getProxFlags(task)
             when (proxFilter) {
@@ -90,7 +115,7 @@ fun EmployeeDashboard(navController: NavController, apiService: ApiService) {
             }
         }
 
-        (titleMatch) && statusMatch && proxMatch
+        (titleMatch || productMatch) && statusMatch && proxMatch
     }
     
     // Calculate stats
@@ -233,7 +258,7 @@ fun EmployeeDashboard(navController: NavController, apiService: ApiService) {
                     value = query,
                     onValueChange = { query = it },
                     modifier = Modifier.fillMaxWidth(),
-                    placeholder = { Text("Search tasks...", color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)) },
+                    placeholder = { Text("Search title or product…", color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)) },
                     leadingIcon = { 
                         Icon(
                             Icons.Default.Search, 
