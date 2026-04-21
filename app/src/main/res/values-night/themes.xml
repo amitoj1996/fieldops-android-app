@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      Dark activity theme used when the device is in system dark mode.
+      Android's resource qualifier system auto-picks this file when
+      Configuration.uiMode has UI_MODE_NIGHT_YES. Compose's FieldOpsTheme
+      independently flips its ColorScheme, so screens are dark too.
+    -->
+    <style name="Theme.FieldOps" parent="android:Theme.Material.NoActionBar" />
+</resources>

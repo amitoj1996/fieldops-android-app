@@ -1,5 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-
+    <!--
+      Light (default) activity theme. The actual UI colors come from
+      FieldOpsTheme in Compose; this just sets the window background that
+      flashes behind Compose at launch and around system insets. A
+      matching values-night/themes.xml provides the dark variant.
+    -->
     <style name="Theme.FieldOps" parent="android:Theme.Material.Light.NoActionBar" />
 </resources>

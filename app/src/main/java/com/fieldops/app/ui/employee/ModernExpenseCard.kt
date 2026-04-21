@@ -34,7 +34,7 @@ fun ModernExpenseCard(
         Statuses.APPROVED, Statuses.AUTO_APPROVED, Statuses.PAID -> SuccessColor
         Statuses.REJECTED -> ErrorColor
         "PENDING", Statuses.PENDING_REVIEW -> WarningColor
-        else -> TextTertiary
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
     
     FloatingGlassCard(
@@ -93,7 +93,7 @@ fun ModernExpenseCard(
                     text = expense.category ?: "Other",
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold,
-                    color = TextPrimary,
+                    color = MaterialTheme.colorScheme.onSurface,
                     fontSize = 22.sp
                 )
                 
@@ -123,14 +123,14 @@ fun ModernExpenseCard(
                         Icon(
                             Icons.Default.Person,
                             contentDescription = null,
-                            tint = TextTertiary,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(12.dp)
                         )
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
                             text = expense.submittedBy!!,
                             style = MaterialTheme.typography.bodySmall,
-                            color = TextTertiary,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                             fontSize = 11.sp
                         )
                     }
@@ -158,7 +158,7 @@ fun ModernExpenseCard(
                     Brush.horizontalGradient(
                         listOf(
                             Color.Transparent,
-                            DividerColor.copy(alpha = 0.3f),
+                            MaterialTheme.colorScheme.outlineVariant,
                             Color.Transparent
                         )
                     )

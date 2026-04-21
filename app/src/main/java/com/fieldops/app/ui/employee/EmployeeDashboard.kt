@@ -98,7 +98,7 @@ fun EmployeeDashboard(navController: NavController, apiService: ApiService) {
     val inProgress = tasks.count { it.status == "IN_PROGRESS" }
     val completed = tasks.count { it.status == "COMPLETED" }
 
-    Column(modifier = Modifier.fillMaxSize().background(Color(0xFFF8FAFC))) {
+    Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         // Gradient Hero Header - Compact
         Box(
             modifier = Modifier
@@ -137,6 +137,9 @@ fun EmployeeDashboard(navController: NavController, apiService: ApiService) {
                 Icon(
                     Icons.Default.Logout,
                     contentDescription = "Logout",
+                    // Fixed white — this icon sits over the brand gradient
+                    // header, which is the same indigo→purple in both light
+                    // and dark mode.
                     tint = Color.White
                 )
             }
@@ -151,6 +154,7 @@ fun EmployeeDashboard(navController: NavController, apiService: ApiService) {
                     "My Dashboard",
                     style = MaterialTheme.typography.displayMedium,
                     fontWeight = FontWeight.ExtraBold,
+                    // Fixed white — text sits on the brand gradient header.
                     color = Color.White,
                     fontSize = 28.sp
                 )
@@ -175,7 +179,7 @@ fun EmployeeDashboard(navController: NavController, apiService: ApiService) {
                         .fillMaxWidth()
                         .shadow(12.dp, RoundedCornerShape(20.dp)),
                     shape = RoundedCornerShape(20.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color.White)
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
                 ) {
                     Row(
                         modifier = Modifier
@@ -201,6 +205,7 @@ fun EmployeeDashboard(navController: NavController, apiService: ApiService) {
                             Icon(
                                 Icons.Default.Assignment,
                                 contentDescription = null,
+                                // Icon sits on a purple gradient circle — stays white.
                                 tint = Color.White,
                                 modifier = Modifier.size(36.dp)
                             )
@@ -212,7 +217,7 @@ fun EmployeeDashboard(navController: NavController, apiService: ApiService) {
                             modifier = Modifier.weight(1f),
                             horizontalArrangement = Arrangement.SpaceEvenly
                         ) {
-                            StatItem(label = "Total", value = "$totalTasks", color = Color(0xFF1E293B))
+                            StatItem(label = "Total", value = "$totalTasks", color = MaterialTheme.colorScheme.onSurface)
                             StatItem(label = "Active", value = "$inProgress", color = AccentTeal)
                             StatItem(label = "Done", value = "$completed", color = SuccessColor)
                         }
@@ -228,20 +233,20 @@ fun EmployeeDashboard(navController: NavController, apiService: ApiService) {
                     value = query,
                     onValueChange = { query = it },
                     modifier = Modifier.fillMaxWidth(),
-                    placeholder = { Text("Search tasks...", color = Color(0xFF94A3B8)) },
+                    placeholder = { Text("Search tasks...", color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)) },
                     leadingIcon = { 
                         Icon(
                             Icons.Default.Search, 
                             contentDescription = null,
-                            tint = Color(0xFF64748B)
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
                         ) 
                     },
                     shape = RoundedCornerShape(16.dp),
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = SecondaryColor,
-                        unfocusedBorderColor = Color(0xFFE2E8F0),
-                        unfocusedContainerColor = Color.White,
-                        focusedContainerColor = Color.White
+                        unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
+                        unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                        focusedContainerColor = MaterialTheme.colorScheme.surface
                     )
                 )
                 Spacer(modifier = Modifier.height(16.dp))
@@ -294,14 +299,14 @@ fun EmployeeDashboard(navController: NavController, apiService: ApiService) {
                                 Icons.Default.Assignment,
                                 contentDescription = null,
                                 modifier = Modifier.size(64.dp),
-                                tint = Color(0xFFCBD5E1)
+                                tint = MaterialTheme.colorScheme.outlineVariant
                             )
                             Spacer(modifier = Modifier.height(16.dp))
                             Text(
                                 "No tasks found",
                                 fontSize = 18.sp,
                                 fontWeight = FontWeight.Medium,
-                                color = Color(0xFF64748B)
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                     }
@@ -346,7 +351,7 @@ fun StatItem(label: String, value: String, color: Color) {
         Text(
             label,
             fontSize = 13.sp,
-            color = Color(0xFF64748B),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
             fontWeight = FontWeight.Medium
         )
     }
@@ -369,7 +374,7 @@ fun PremiumTaskCard(task: Task, onClick: () -> Unit) {
             .clickable(onClick = onClick)
             .shadow(4.dp, RoundedCornerShape(16.dp)),
         shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White)
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {
         Column(
             modifier = Modifier.padding(20.dp),
@@ -385,7 +390,7 @@ fun PremiumTaskCard(task: Task, onClick: () -> Unit) {
                     text = task.title ?: "Untitled",
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
-                    color = Color(0xFF1E293B),
+                    color = MaterialTheme.colorScheme.onSurface,
                     fontSize = 19.sp,
                     modifier = Modifier.weight(1f)
                 )
@@ -401,7 +406,7 @@ fun PremiumTaskCard(task: Task, onClick: () -> Unit) {
             // Show dates only for active tasks (not completed)
             val isCompleted = task.status?.uppercase() == "COMPLETED"
             if (!isCompleted && (task.slaStart != null || task.slaEnd != null)) {
-                Divider(color = Color(0xFFE2E8F0), thickness = 1.dp)
+                Divider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 1.dp)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(24.dp)
@@ -413,15 +418,15 @@ fun PremiumTaskCard(task: Task, onClick: () -> Unit) {
                                     Icons.Default.CalendarToday,
                                     contentDescription = null,
                                     modifier = Modifier.size(14.dp),
-                                    tint = Color(0xFF64748B)
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                                 Spacer(modifier = Modifier.width(6.dp))
-                                Text("Start", fontSize = 12.sp, color = Color(0xFF64748B))
+                                Text("Start", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                             Text(
                                 formatDate(it),
                                 fontSize = 14.sp,
-                                color = Color(0xFF1E293B),
+                                color = MaterialTheme.colorScheme.onSurface,
                                 fontWeight = FontWeight.Medium
                             )
                         }
@@ -433,15 +438,15 @@ fun PremiumTaskCard(task: Task, onClick: () -> Unit) {
                                     Icons.Default.Event,
                                     contentDescription = null,
                                     modifier = Modifier.size(14.dp),
-                                    tint = Color(0xFF64748B)
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                                 Spacer(modifier = Modifier.width(6.dp))
-                                Text("Due", fontSize = 12.sp, color = Color(0xFF64748B))
+                                Text("Due", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                             Text(
                                 formatDate(it),
                                 fontSize = 14.sp,
-                                color = Color(0xFF1E293B),
+                                color = MaterialTheme.colorScheme.onSurface,
                                 fontWeight = FontWeight.Medium
                             )
                         }
@@ -461,38 +466,38 @@ fun FilterDropdown(options: List<String>, selected: String, onSelected: (String)
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(12.dp),
             colors = ButtonDefaults.outlinedButtonColors(
-                containerColor = if (selected != "ALL") SecondaryColor.copy(alpha = 0.12f) else Color.White
+                containerColor = if (selected != "ALL") SecondaryColor.copy(alpha = 0.12f) else MaterialTheme.colorScheme.surface
             ),
             border = ButtonDefaults.outlinedButtonBorder.copy(
                 width = 1.5.dp,
-                brush = SolidColor(if (selected != "ALL") SecondaryColor else Color(0xFFE2E8F0))
+                brush = SolidColor(if (selected != "ALL") SecondaryColor else MaterialTheme.colorScheme.outlineVariant)
             )
         ) {
             Text(
                 selected.replace("_", " "),
                 fontSize = 13.sp,
                 fontWeight = FontWeight.Medium,
-                color = if (selected != "ALL") SecondaryColor else Color(0xFF64748B)
+                color = if (selected != "ALL") SecondaryColor else MaterialTheme.colorScheme.onSurfaceVariant
             )
             Spacer(modifier = Modifier.width(4.dp))
             Icon(
                 Icons.Default.ArrowDropDown,
                 null,
                 modifier = Modifier.size(20.dp),
-                tint = if (selected != "ALL") SecondaryColor else Color(0xFF64748B)
+                tint = if (selected != "ALL") SecondaryColor else MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
         DropdownMenu(
             expanded = expanded,
             onDismissRequest = { expanded = false },
-            modifier = Modifier.background(Color.White)
+            modifier = Modifier.background(MaterialTheme.colorScheme.surface)
         ) {
             options.forEach { option ->
                 DropdownMenuItem(
                     text = {
                         Text(
                             option.replace("_", " "),
-                            color = if (option == selected) SecondaryColor else Color(0xFF1E293B)
+                            color = if (option == selected) SecondaryColor else MaterialTheme.colorScheme.onSurface
                         )
                     },
                     onClick = {
@@ -512,6 +517,7 @@ fun SlaTagChip(tag: SlaTag) {
     val style = when (tag) {
         SlaTag.STARTS_SOON -> TagStyle(Color(0xFFFEF3C7), Color(0xFFD97706), "Starts Soon", Icons.Default.Schedule)
         SlaTag.ENDS_SOON -> TagStyle(Color(0xFFFEE2E2), Color(0xFFDC2626), "Due Soon", Icons.Default.Warning)
+        // White foreground on the red Overdue chip — readable in both modes.
         SlaTag.OVERDUE -> TagStyle(Color(0xFFDC2626), Color.White, "Overdue", Icons.Default.Error)
         else -> TagStyle(Color.Transparent, Color.Transparent, "", Icons.Default.Info)
     }

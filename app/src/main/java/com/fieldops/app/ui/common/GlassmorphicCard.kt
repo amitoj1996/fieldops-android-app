@@ -18,15 +18,15 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
 /**
- * Modern card with solid background and subtle gradient
- * Removed blur for better text visibility
+ * Modern card with solid background and subtle gradient.
+ * Defaults track MaterialTheme so it renders correctly in dark mode.
  */
 @Composable
 fun GlassmorphicCard(
     modifier: Modifier = Modifier,
     blurRadius: Dp = 16.dp,
-    backgroundColor: Color = Color.White,
-    borderColor: Color = Color.White.copy(alpha = 0.3f),
+    backgroundColor: Color = MaterialTheme.colorScheme.surface,
+    borderColor: Color = MaterialTheme.colorScheme.outlineVariant,
     borderWidth: Dp = 1.dp,
     cornerRadius: Dp = 24.dp,
     elevation: Dp = 0.dp,
@@ -36,7 +36,7 @@ fun GlassmorphicCard(
         modifier = modifier
             .shadow(8.dp, RoundedCornerShape(cornerRadius))
             .clip(RoundedCornerShape(cornerRadius))
-            .background(backgroundColor) // Solid background for readability
+            .background(backgroundColor)
             .border(
                 width = borderWidth,
                 brush = Brush.verticalGradient(
@@ -56,7 +56,8 @@ fun GlassmorphicCard(
 }
 
 /**
- * Modern card with solid white background
+ * Card that follows the MaterialTheme surface color (white in light mode,
+ * near-black in dark mode) and uses the caller's tint for its border.
  */
 @Composable
 fun FloatingGlassCard(
@@ -66,7 +67,7 @@ fun FloatingGlassCard(
 ) {
     GlassmorphicCard(
         modifier = modifier,
-        backgroundColor = Color.White, // Solid white for maximum readability
+        backgroundColor = MaterialTheme.colorScheme.surface,
         borderColor = tintColor.copy(alpha = 0.2f),
         cornerRadius = 20.dp,
         content = content

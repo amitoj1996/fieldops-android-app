@@ -370,7 +370,7 @@ fun TaskDetailScreen(navController: NavController, apiService: ApiService, taskI
             ) {
                 // Status & Actions
                 item {
-                    Card(colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
                         Column(modifier = Modifier.padding(16.dp)) {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
@@ -444,7 +444,7 @@ fun TaskDetailScreen(navController: NavController, apiService: ApiService, taskI
 
                 // Report Upload
                 item {
-                    Card(colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
                         Column(modifier = Modifier.padding(16.dp)) {
                             Text("Performance Report", style = MaterialTheme.typography.titleMedium)
                             Spacer(modifier = Modifier.height(8.dp))
@@ -496,9 +496,9 @@ fun TaskDetailScreen(navController: NavController, apiService: ApiService, taskI
                             
                             if (t.hasReport) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(Icons.Default.Check, contentDescription = null, tint = Color(0xFF15803D))
+                                    Icon(Icons.Default.Check, contentDescription = null, tint = SuccessColor)
                                     Spacer(modifier = Modifier.width(8.dp))
-                                    Text("Report Uploaded", color = Color(0xFF15803D))
+                                    Text("Report Uploaded", color = SuccessColor)
                                     Spacer(modifier = Modifier.width(8.dp))
                                     TextButton(
                                         onClick = {
@@ -539,7 +539,7 @@ fun TaskDetailScreen(navController: NavController, apiService: ApiService, taskI
                 // Budget Usage — uses the shared per-day budget helper so the
                 // numbers here agree with the server's auto-approve decisions.
                 item {
-                    Card(colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
                         Column(modifier = Modifier.padding(16.dp)) {
                             Text("Budget Usage (today, IST)", style = MaterialTheme.typography.titleMedium)
                             Spacer(modifier = Modifier.height(12.dp))
@@ -574,7 +574,7 @@ fun TaskDetailScreen(navController: NavController, apiService: ApiService, taskI
 
                 // Timeline
                 item {
-                    Card(colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
                         Column(modifier = Modifier.padding(16.dp)) {
                             Text("Timeline", style = MaterialTheme.typography.titleMedium)
                             Spacer(modifier = Modifier.height(8.dp))
@@ -742,7 +742,7 @@ fun AddExpenseDialog(
                         Text("Uploading & Scanning...", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
                     }
                 } else {
-                    Text("Receipt Uploaded", color = Color(0xFF15803D), fontWeight = FontWeight.Bold)
+                    Text("Receipt Uploaded", color = SuccessColor, fontWeight = FontWeight.Bold)
                     
                     Box {
                         OutlinedButton(onClick = { expanded = true }, modifier = Modifier.fillMaxWidth()) {

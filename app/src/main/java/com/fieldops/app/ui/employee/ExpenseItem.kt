@@ -61,7 +61,7 @@ fun ExpenseItem(
                         text = expense.category ?: "Other",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
-                        color = TextPrimary
+                        color = MaterialTheme.colorScheme.onSurface
                     )
                     if (taskTitle != null) {
                         Text(
@@ -75,7 +75,7 @@ fun ExpenseItem(
                         Text(
                             text = "By: ${expense.submittedBy}",
                             style = MaterialTheme.typography.bodySmall,
-                            color = TextTertiary,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                             fontSize = 11.sp
                         )
                     }
