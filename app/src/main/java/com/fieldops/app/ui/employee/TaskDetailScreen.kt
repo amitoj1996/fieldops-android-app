@@ -853,34 +853,25 @@ fun TaskDetailScreen(navController: NavController, apiService: ApiService, taskI
                     }
                 }
                 
-                // Expenses List — filtered to the expenses that touch the
-                // selected IST day, matching the web's touchesIstDate filter
-                // (employee.js). Budget.applicableDates() already handles the
-                // hotel multi-night spread + single-day fallback, so we reuse
-                // it here instead of re-deriving the logic.
-                val vdParsed = try { java.time.LocalDate.parse(selectedBudgetDate) } catch (_: Exception) { null }
-                val filteredExpenses = if (vdParsed == null) expenses
-                    else expenses.filter { e ->
-                        com.fieldops.app.utils.Budget.applicableDates(e).contains(vdParsed)
-                    }
-                val expensesHeader = run {
-                    val formatted = vdParsed
-                        ?.format(java.time.format.DateTimeFormatter.ofPattern("d MMM yyyy", java.util.Locale.ENGLISH))
-                    if (formatted != null) "Expenses — $formatted" else "Expenses"
-                }
+                // Expenses List — show every expense for this task. The
+                // Budget Usage card above has a day picker but it drives
+                // only the budget numbers; filtering the expense list by
+                // the same date hid expenses whose txnDate (often OCR-
+                // derived from the receipt's printed date) fell outside
+                // the picker's reachable range, making them feel "lost".
                 item {
-                    Text(expensesHeader, style = MaterialTheme.typography.titleMedium)
+                    Text("Expenses", style = MaterialTheme.typography.titleMedium)
                 }
-                if (filteredExpenses.isEmpty()) {
+                if (expenses.isEmpty()) {
                     item {
                         Text(
-                            "No expenses for this day.",
+                            "No expenses yet.",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
-                items(filteredExpenses) { expense ->
+                items(expenses) { expense ->
                     ExpenseItem(
                         expense = expense,
                         taskTitle = t.title,
