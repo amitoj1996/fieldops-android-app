@@ -89,6 +89,14 @@ interface ApiService {
     @POST("/api/tasks/report/uploaded")
     suspend fun finalizeReport(@Body body: Map<String, String>): Response<Any>
 
+    // Products catalog. GET is open to any authenticated user (the backend
+    // uses _ensure_auth, not _ensure_admin) — employees need it to resolve
+    // task.items[].productId into human-readable product names.
+    @GET("/api/products")
+    suspend fun getProducts(
+        @Query("tenantId") tenantId: String = "default"
+    ): Response<List<Product>>
+
     // --- Generic Upload (Azure Blob via SAS) ---
     @PUT
     @Headers("x-ms-blob-type: BlockBlob")
@@ -202,3 +210,13 @@ data class FinalizeExpenseResponse(val approval: ApprovalStatus?)
 data class OcrRequest(val tenantId: String, val taskId: String, val filename: String, val save: Boolean)
 data class OcrResponse(val blobPath: String?, val ocr: OcrData?)
 data class OcrData(val merchant: String?, val total: Double?, val date: String?, val currency: String?)
+
+// Products catalog — employees only read this (to resolve task item names);
+// the admin-only create/update/delete endpoints are intentionally not in
+// this ApiService.
+data class Product(
+    val id: String,
+    val name: String?,
+    val sku: String?,
+    val unitPrice: Double? = null
+)

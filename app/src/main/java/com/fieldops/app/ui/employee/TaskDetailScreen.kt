@@ -42,6 +42,10 @@ fun TaskDetailScreen(navController: NavController, apiService: ApiService, taskI
     var task by remember { mutableStateOf<Task?>(null) }
     var expenses by remember { mutableStateOf<List<Expense>>(emptyList()) }
     var events by remember { mutableStateOf<List<TaskEvent>>(emptyList()) }
+    // productId -> "Name (SKU)" so task.items render as human names instead
+    // of opaque UUIDs. Product list is small (tens of rows); one fetch is
+    // fine, no pagination needed.
+    var productNames by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
     var loading by remember { mutableStateOf(true) }
     var showAddExpenseDialog by remember { mutableStateOf(false) }
     var draftExpense by remember { mutableStateOf<DraftExpense?>(null) }
@@ -70,6 +74,19 @@ fun TaskDetailScreen(navController: NavController, apiService: ApiService, taskI
 
                 val evRes = apiService.getTaskEvents(taskId)
                 if (evRes.isSuccessful) events = evRes.body() ?: emptyList()
+
+                // Resolve task.items[].productId into product names.
+                val pRes = apiService.getProducts()
+                if (pRes.isSuccessful) {
+                    val list = pRes.body().orEmpty()
+                    productNames = list.associate { p ->
+                        p.id to (
+                            p.name?.takeIf { it.isNotBlank() }?.let {
+                                if (!p.sku.isNullOrBlank()) "$it (${p.sku})" else it
+                            } ?: p.id
+                        )
+                    }
+                }
             } catch (e: Exception) {
                 android.util.Log.e("TaskDetail", "Error refreshing task details", e)
                 android.widget.Toast.makeText(context, "Error loading task details: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
@@ -560,6 +577,53 @@ fun TaskDetailScreen(navController: NavController, apiService: ApiService, taskI
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
                                     Text(if (isUploadingReport) "Uploading..." else "Upload PDF Report")
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Products to collect / deliver. Mirrors the web employee
+                // view (pages/employee.js "Products" section) — resolves
+                // task.items[].productId against the products catalog.
+                item {
+                    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Text("Products", style = MaterialTheme.typography.titleMedium)
+                            Spacer(modifier = Modifier.height(12.dp))
+                            val items = t.items.orEmpty()
+                            if (items.isEmpty()) {
+                                Text(
+                                    "No products listed for this task.",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            } else {
+                                items.forEach { row ->
+                                    val id = row.productId ?: row.product ?: ""
+                                    val name = productNames[id]
+                                        ?: id.ifBlank { "Item" }
+                                    val qty = row.qty ?: row.quantity ?: 1
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 6.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = name,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        Text(
+                                            text = "× $qty",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                    }
                                 }
                             }
                         }
