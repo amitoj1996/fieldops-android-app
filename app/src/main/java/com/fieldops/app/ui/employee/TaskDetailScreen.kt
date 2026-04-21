@@ -185,14 +185,22 @@ fun TaskDetailScreen(navController: NavController, apiService: ApiService, taskI
         }
     }
 
-    // Receipt Launcher (Gallery)
-    val receiptLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
+    // Receipt Launcher (Gallery). Accepts images AND PDFs to match the web
+    // <input accept="image/*,application/pdf"> behaviour in employee.js.
+    // OpenDocument() lets us pass multiple MIME filters; we then detect the
+    // real type from the ContentResolver so the blob is uploaded with the
+    // correct Content-Type and file extension (OCR backend rejects a PDF
+    // that claims to be image/jpeg).
+    val receiptLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         if (uri != null) {
             scope.launch {
                 isUploadingReceipt = true
                 try {
+                    val mimeType = context.contentResolver.getType(uri) ?: "image/jpeg"
+                    val isPdf = mimeType.equals("application/pdf", ignoreCase = true)
+                    val ext = if (isPdf) "pdf" else "jpg"
                     val inputStream = context.contentResolver.openInputStream(uri)
-                    val file = File(context.cacheDir, "receipt_${System.currentTimeMillis()}.jpg")
+                    val file = File(context.cacheDir, "receipt_${System.currentTimeMillis()}.$ext")
                     val outputStream = FileOutputStream(file)
                     inputStream?.copyTo(outputStream)
                     inputStream?.close()
@@ -204,7 +212,7 @@ fun TaskDetailScreen(navController: NavController, apiService: ApiService, taskI
                         if (sas != null) {
                             // Upload file to blob storage using SAS URL
                             val uploadSuccess = try {
-                                val fileBody = file.asRequestBody("image/jpeg".toMediaTypeOrNull())
+                                val fileBody = file.asRequestBody(mimeType.toMediaTypeOrNull())
                                 val uploadRes = apiService.uploadBlob(sas.uploadUrl, fileBody)
                                 uploadRes.isSuccessful
                             } catch (e: Exception) {
@@ -364,7 +372,7 @@ fun TaskDetailScreen(navController: NavController, apiService: ApiService, taskI
                         }
                     }
                 },
-                onGallery = { receiptLauncher.launch("image/*") },
+                onGallery = { receiptLauncher.launch(arrayOf("image/*", "application/pdf")) },
                 onSubmit = { category, total, hotelCheckIn, hotelCheckOut, nights ->
                     scope.launch {
                         isUploadingReceipt = true
@@ -416,7 +424,8 @@ fun TaskDetailScreen(navController: NavController, apiService: ApiService, taskI
                 draft = draftExpense,
                 uploading = isUploadingReceipt,
                 task = task,
-                expenses = expenses
+                expenses = expenses,
+                viewDate = selectedBudgetDate
             )
         }
         if (loading && task == null) {
@@ -705,17 +714,27 @@ fun TaskDetailScreen(navController: NavController, apiService: ApiService, taskI
                             Text("Budget Usage (IST)", style = MaterialTheme.typography.titleMedium)
                             Spacer(modifier = Modifier.height(8.dp))
 
-                            // SLA window bounds in IST; clamp the stepper so
-                            // users can't pick days outside the window.
+                            // Stepper bounds in IST. The web app (employee.js)
+                            // computes min/max as min/max of SLA window,
+                            // earliest/latest event date, and today — so early
+                            // check-in on yesterday or a stay-late scenario
+                            // after slaEnd still let the employee inspect the
+                            // day that produced the event.
                             val istOffset = java.time.ZoneOffset.ofHoursMinutes(5, 30)
-                            val slaStartLocal = com.fieldops.app.utils.parseToMillis(t.slaStart)
+                            fun istDate(iso: String?) = com.fieldops.app.utils.parseToMillis(iso)
                                 ?.let { java.time.Instant.ofEpochMilli(it).atOffset(istOffset).toLocalDate() }
-                            val slaEndLocal = com.fieldops.app.utils.parseToMillis(t.slaEnd)
-                                ?.let { java.time.Instant.ofEpochMilli(it).atOffset(istOffset).toLocalDate() }
+                            val slaStartLocal = istDate(t.slaStart)
+                            val slaEndLocal = istDate(t.slaEnd)
+                            val eventDates = events.mapNotNull { istDate(it.ts) }
+                            val earliestEvent = eventDates.minOrNull()
+                            val latestEvent = eventDates.maxOrNull()
+                            val todayLocal = java.time.LocalDate.now(istOffset)
+                            val minBound = listOfNotNull(slaStartLocal, earliestEvent, todayLocal).minOrNull()
+                            val maxBound = listOfNotNull(slaEndLocal, latestEvent, todayLocal).maxOrNull()
                             val current = try {
                                 java.time.LocalDate.parse(selectedBudgetDate)
                             } catch (_: Exception) {
-                                java.time.LocalDate.now(istOffset)
+                                todayLocal
                             }
 
                             Row(
@@ -726,11 +745,11 @@ fun TaskDetailScreen(navController: NavController, apiService: ApiService, taskI
                                 IconButton(
                                     onClick = {
                                         val prev = current.minusDays(1)
-                                        if (slaStartLocal == null || !prev.isBefore(slaStartLocal)) {
+                                        if (minBound == null || !prev.isBefore(minBound)) {
                                             selectedBudgetDate = prev.toString()
                                         }
                                     },
-                                    enabled = slaStartLocal == null || current.isAfter(slaStartLocal)
+                                    enabled = minBound == null || current.isAfter(minBound)
                                 ) {
                                     Icon(Icons.Default.ChevronLeft, contentDescription = "Previous day")
                                 }
@@ -753,11 +772,11 @@ fun TaskDetailScreen(navController: NavController, apiService: ApiService, taskI
                                 IconButton(
                                     onClick = {
                                         val next = current.plusDays(1)
-                                        if (slaEndLocal == null || !next.isAfter(slaEndLocal)) {
+                                        if (maxBound == null || !next.isAfter(maxBound)) {
                                             selectedBudgetDate = next.toString()
                                         }
                                     },
-                                    enabled = slaEndLocal == null || current.isBefore(slaEndLocal)
+                                    enabled = maxBound == null || current.isBefore(maxBound)
                                 ) {
                                     Icon(Icons.Default.ChevronRight, contentDescription = "Next day")
                                 }
@@ -805,8 +824,24 @@ fun TaskDetailScreen(navController: NavController, apiService: ApiService, taskI
                                     Row(modifier = Modifier.padding(vertical = 4.dp)) {
                                         Text("• ", fontWeight = FontWeight.Bold)
                                         Column {
-                                            Text(ev.eventType.replace("_", " "), fontWeight = FontWeight.Bold)
-                                            Text(formatDate(ev.ts), style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+                                            // (late) suffix matches the web
+                                            // timeline (employee.js ev.late
+                                            // renders "(late)"). Server-side
+                                            // `late` is set when an event
+                                            // fires outside the SLA window.
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Text(ev.eventType.replace("_", " "), fontWeight = FontWeight.Bold)
+                                                if (ev.late == true) {
+                                                    Spacer(modifier = Modifier.width(6.dp))
+                                                    Text(
+                                                        "(late)",
+                                                        style = MaterialTheme.typography.bodySmall,
+                                                        color = ErrorColor,
+                                                        fontWeight = FontWeight.SemiBold
+                                                    )
+                                                }
+                                            }
+                                            Text(formatDate(ev.ts), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                             if (ev.reason != null) {
                                                 Text("Reason: ${ev.reason}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
                                             }
@@ -818,11 +853,34 @@ fun TaskDetailScreen(navController: NavController, apiService: ApiService, taskI
                     }
                 }
                 
-                // Expenses List
-                item {
-                    Text("Expenses", style = MaterialTheme.typography.titleMedium)
+                // Expenses List — filtered to the expenses that touch the
+                // selected IST day, matching the web's touchesIstDate filter
+                // (employee.js). Budget.applicableDates() already handles the
+                // hotel multi-night spread + single-day fallback, so we reuse
+                // it here instead of re-deriving the logic.
+                val vdParsed = try { java.time.LocalDate.parse(selectedBudgetDate) } catch (_: Exception) { null }
+                val filteredExpenses = if (vdParsed == null) expenses
+                    else expenses.filter { e ->
+                        com.fieldops.app.utils.Budget.applicableDates(e).contains(vdParsed)
+                    }
+                val expensesHeader = run {
+                    val formatted = vdParsed
+                        ?.format(java.time.format.DateTimeFormatter.ofPattern("d MMM yyyy", java.util.Locale.ENGLISH))
+                    if (formatted != null) "Expenses — $formatted" else "Expenses"
                 }
-                items(expenses) { expense ->
+                item {
+                    Text(expensesHeader, style = MaterialTheme.typography.titleMedium)
+                }
+                if (filteredExpenses.isEmpty()) {
+                    item {
+                        Text(
+                            "No expenses for this day.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                items(filteredExpenses) { expense ->
                     ExpenseItem(
                         expense = expense,
                         taskTitle = t.title,
@@ -969,6 +1027,7 @@ fun AddExpenseDialog(
     uploading: Boolean,
     task: Task?,
     expenses: List<Expense>,
+    viewDate: String,
     categories: List<String> = listOf("Hotel", "Food", "Travel", "Other")
 ) {
     var category by remember(draft) { mutableStateOf(draft?.category ?: "") }
@@ -991,19 +1050,25 @@ fun AddExpenseDialog(
         } catch (_: Exception) { null }
     }
 
-    // Remaining budget for today (IST). The server's auto-approve decision
-    // runs against per-day allocations, so showing "today" keeps the UI and
-    // server agreeing for single-day categories. For hotel multi-night
-    // spreads the actual call is per-date but previewing today is enough to
-    // forewarn about obvious overspend.
-    val today = com.fieldops.app.utils.DateUtils.getTodayIST()
-    val remaining = remember(task, expenses) {
-        com.fieldops.app.utils.Budget.remainingByCategory(task, expenses, today)
+    // Remaining budget for the *selected* IST day (the same day the Budget
+    // Usage card is showing, driven by the parent's day picker). Matches
+    // the web app where the viewDate controls both the budget card and the
+    // per-category remaining preview in the dialog. For hotel multi-night
+    // spreads the server's per-date allocation still applies at finalize
+    // time, but this preview warns on obvious overspend for that day.
+    val remaining = remember(task, expenses, viewDate) {
+        com.fieldops.app.utils.Budget.remainingByCategory(task, expenses, viewDate)
     }
     val dailyLimit = remember(task, category) {
         if (category.isNotEmpty()) com.fieldops.app.utils.Budget.dailyLimitFor(task, category) else 0.0
     }
     val remainingForCat = if (category.isNotEmpty()) remaining[category] ?: dailyLimit else null
+    val viewDateLabel = remember(viewDate) {
+        try {
+            java.time.LocalDate.parse(viewDate)
+                .format(java.time.format.DateTimeFormatter.ofPattern("d MMM yyyy", java.util.Locale.ENGLISH))
+        } catch (_: Exception) { viewDate }
+    }
 
     val parsedTotal = total.toDoubleOrNull()
     val ocrTotal = draft?.total
@@ -1175,13 +1240,13 @@ fun AddExpenseDialog(
                     if (remainingForCat != null) {
                         val overLimit = parsedTotal != null && parsedTotal > remainingForCat + 0.01
                         Text(
-                            "Remaining today ($category, IST): ₹${remainingForCat.toInt()} of ₹${dailyLimit.toInt()}",
+                            "Remaining on $viewDateLabel ($category, IST): ₹${remainingForCat.toInt()} of ₹${dailyLimit.toInt()}",
                             style = MaterialTheme.typography.bodySmall,
                             color = if (overLimit) ErrorColor else MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         if (overLimit) {
                             Text(
-                                "This exceeds today's remaining budget — will need admin review.",
+                                "This exceeds the remaining budget for $viewDateLabel — will need admin review.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = ErrorColor
                             )

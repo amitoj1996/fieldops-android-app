@@ -575,13 +575,28 @@ enum class SlaTag { NONE, STARTS_SOON, ENDS_SOON, OVERDUE }
 
 data class ProxFlags(val startsSoon: Boolean, val endsSoon: Boolean, val overdue: Boolean)
 
+/**
+ * Mirrors slaTag / prox filter logic in fieldops-web pages/employee.js.
+ * Key parity rules:
+ *  - 24-hour window (ONE_DAY), not 48h — a task two days out should get
+ *    no pill at all.
+ *  - `startsSoon` requires the task to NOT be in progress, so a short
+ *    in-progress task whose end is close won't also advertise "Starts
+ *    soon".
+ *  - Completed tasks get no pill at all.
+ */
 fun getProxFlags(t: Task): ProxFlags {
+    val status = (t.status ?: "").lowercase()
+    val done = status == "completed"
+    val inProgress = status == "in_progress"
+    if (done) return ProxFlags(startsSoon = false, endsSoon = false, overdue = false)
+
     val now = System.currentTimeMillis()
     val start = parseToMillis(t.slaStart)
     val end = parseToMillis(t.slaEnd)
     val dayMs = 24 * 3600 * 1000L
-    val startsSoon = start != null && start > now && (start - now) < 2 * dayMs
-    val endsSoon = end != null && end > now && (end - now) < 2 * dayMs && (end - now) >= 0
+    val startsSoon = !inProgress && start != null && start > now && (start - now) <= dayMs
+    val endsSoon = end != null && end > now && (end - now) <= dayMs
     val overdue = end != null && end < now
     return ProxFlags(startsSoon, endsSoon, overdue)
 }
