@@ -393,11 +393,28 @@ fun TaskDetailScreen(navController: NavController, apiService: ApiService, taskI
                                     onClick = {
                                         scope.launch {
                                             try {
-                                                apiService.checkIn(CheckInRequest("default", t.id))
-                                                refresh()
+                                                val res = apiService.checkIn(CheckInRequest("default", t.id))
+                                                if (res.isSuccessful) {
+                                                    refresh()
+                                                } else {
+                                                    // Surface server-side reasons (Forbidden,
+                                                    // task-not-found, validation errors) to the
+                                                    // user instead of silently pretending it
+                                                    // worked and re-rendering the same state.
+                                                    val errBody = res.errorBody()?.string().orEmpty()
+                                                    android.util.Log.e(
+                                                        "TaskDetail",
+                                                        "Check-in HTTP ${res.code()}: $errBody"
+                                                    )
+                                                    android.widget.Toast.makeText(
+                                                        context,
+                                                        "Check-in failed (HTTP ${res.code()}): $errBody",
+                                                        android.widget.Toast.LENGTH_LONG
+                                                    ).show()
+                                                }
                                             } catch (e: Exception) {
                                                 android.util.Log.e("TaskDetail", "Check-in failed", e)
-                                                android.widget.Toast.makeText(context, "Check-in failed: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
+                                                android.widget.Toast.makeText(context, "Check-in failed: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
                                             }
                                         }
                                     },
@@ -411,15 +428,28 @@ fun TaskDetailScreen(navController: NavController, apiService: ApiService, taskI
                                         scope.launch {
                                             try {
                                                 val res = apiService.checkOut(CheckOutRequest("default", t.id))
-                                                if (!res.isSuccessful && res.code() == 400) {
-                                                    // Assume reason needed
+                                                if (res.isSuccessful) {
+                                                    refresh()
+                                                } else if (res.code() == 400) {
+                                                    // Backend signals "reason required" on
+                                                    // SLA-breached check-out via a 400. Pop
+                                                    // the reason dialog.
                                                     showCheckOutReasonDialog = true
                                                 } else {
-                                                    refresh()
+                                                    val errBody = res.errorBody()?.string().orEmpty()
+                                                    android.util.Log.e(
+                                                        "TaskDetail",
+                                                        "Check-out HTTP ${res.code()}: $errBody"
+                                                    )
+                                                    android.widget.Toast.makeText(
+                                                        context,
+                                                        "Check-out failed (HTTP ${res.code()}): $errBody",
+                                                        android.widget.Toast.LENGTH_LONG
+                                                    ).show()
                                                 }
                                             } catch (e: Exception) {
                                                 android.util.Log.e("TaskDetail", "Check-out failed", e)
-                                                android.widget.Toast.makeText(context, "Check-out failed: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
+                                                android.widget.Toast.makeText(context, "Check-out failed: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
                                             }
                                         }
                                     },
@@ -680,9 +710,33 @@ fun TaskDetailScreen(navController: NavController, apiService: ApiService, taskI
             confirmButton = {
                 Button(onClick = {
                     scope.launch {
-                        apiService.checkOut(CheckOutRequest("default", taskId, checkOutReason))
-                        showCheckOutReasonDialog = false
-                        refresh()
+                        try {
+                            val res = apiService.checkOut(
+                                CheckOutRequest("default", taskId, checkOutReason)
+                            )
+                            if (res.isSuccessful) {
+                                showCheckOutReasonDialog = false
+                                refresh()
+                            } else {
+                                val errBody = res.errorBody()?.string().orEmpty()
+                                android.util.Log.e(
+                                    "TaskDetail",
+                                    "Check-out with reason HTTP ${res.code()}: $errBody"
+                                )
+                                android.widget.Toast.makeText(
+                                    context,
+                                    "Check-out failed (HTTP ${res.code()}): $errBody",
+                                    android.widget.Toast.LENGTH_LONG
+                                ).show()
+                            }
+                        } catch (e: Exception) {
+                            android.util.Log.e("TaskDetail", "Check-out with reason failed", e)
+                            android.widget.Toast.makeText(
+                                context,
+                                "Check-out failed: ${e.message}",
+                                android.widget.Toast.LENGTH_LONG
+                            ).show()
+                        }
                     }
                 }) {
                     Text("Submit")
